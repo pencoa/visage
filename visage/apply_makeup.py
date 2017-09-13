@@ -75,11 +75,11 @@ class ApplyMakeup(DetectLandmarks):
 
     def __fill_lip_lines(self, outer, inner):
         """ Fills the outlines of a lip with colour. """
-        outer_curve = itertools.izip(outer[0], outer[1])
-        inner_curve = itertools.izip(inner[0], inner[1])
+        outer_curve = zip(outer[0], outer[1])
+        inner_curve = zip(inner[0], inner[1])
         count = len(inner[0]) - 1
         last_inner = [inner[0][count], inner[1][count]]
-        for o_point, i_point in itertools.izip_longest(
+        for o_point, i_point in itertools.zip_longest(
                 outer_curve, inner_curve, fillvalue=last_inner
             ):
             line = scipy.interpolate.interp1d(
@@ -90,28 +90,10 @@ class ApplyMakeup(DetectLandmarks):
         return
 
 
-    def __fill_lip_solid(self, outer, inner):
-        """ Fills solid colour inside two outlines. """
-        inner[0].reverse()
-        inner[1].reverse()
-        outer_curve = itertools.izip(outer[0], outer[1])
-        inner_curve = itertools.izip(inner[0], inner[1])
-        points = []
-        for point in outer_curve:
-            points.append(np.array(point, dtype=np.int32))
-        for point in inner_curve:
-            points.append(np.array(point, dtype=np.int32))
-        points = np.array(points, dtype=np.int32)
-        self.red_l = int(self.red_l)
-        self.green_l = int(self.green_l)
-        self.blue_l = int(self.blue_l)
-        cv2.fillPoly(self.image, [points], (self.red_l, self.green_l, self.blue_l))
-
-
     def __smoothen_color(self, outer, inner):
         """ Smoothens and blends colour applied between a set of outlines. """
-        outer_curve = itertools.izip(outer[0], outer[1])
-        inner_curve = itertools.izip(inner[0], inner[1])
+        outer_curve = zip(outer[0], outer[1])
+        inner_curve = zip(inner[0], inner[1])
         x_points = []
         y_points = []
         for point in outer_curve:
@@ -183,7 +165,7 @@ class ApplyMakeup(DetectLandmarks):
                     eye_y.append(int(curve(point)) - 2)
                 elif count:
                     eye_y.append(int(curve(point)) - 3)
-        curve = itertools.izip(eye_x, eye_y)
+        curve = zip(eye_x, eye_y)
         points = []
         for point in curve:
             points.append(np.array(point, dtype=np.int32))
@@ -249,13 +231,7 @@ class ApplyMakeup(DetectLandmarks):
         """ Fill colour in lips. """
         self.__fill_lip_lines(uol_c, uil_c)
         self.__fill_lip_lines(lol_c, lil_c)
-        self.__add_color(0.5)
-        self.__fill_lip_solid(uol_c, uil_c)
-        self.__fill_lip_solid(lol_c, lil_c)
-        self.__smoothen_color(uol_c, uil_c)
-        self.__smoothen_color(lol_c, lil_c)
-
-        self.__add_color(0.3)
+        self.__add_color(1)
 
 
     def __create_eye_liner(self, eyes_points):
@@ -287,15 +263,15 @@ class ApplyMakeup(DetectLandmarks):
         self.blue_l = blips
         self.__read_image(filename)
         lips = self.get_lips(self.image)
-        lips = list(map(lambda point: point.split(), lips.split('\n')))
+        lips = list([point.split() for point in lips.split('\n')])
         lips_points = [item for sublist in lips for item in sublist]
         uol, uil, lol, lil = self.__get_points_lips(lips_points)
         uol_c, uil_c, lol_c, lil_c = self.__get_curves_lips(uol, uil, lol, lil)
         self.__fill_color(uol_c, uil_c, lol_c, lil_c)
-        self.im_copy = cv2.cvtColor(self.im_copy, cv2.COLOR_BGR2RGB)
+        self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
         name = 'color_' + str(self.red_l) + '_' + str(self.green_l) + '_' + str(self.blue_l)
         file_name = 'output_' + name + '.jpg'
-        cv2.imwrite(file_name, self.im_copy)
+        cv2.imwrite(file_name, self.image)
         return file_name
 
 
