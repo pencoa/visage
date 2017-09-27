@@ -33,7 +33,6 @@ class ApplyMakeup(DetectLandmarks):
         self.red_e = 0
         self.green_e = 0
         self.blue_e = 0
-        self.debug = 0
         self.image = 0
         self.width = 0
         self.height = 0
@@ -48,46 +47,36 @@ class ApplyMakeup(DetectLandmarks):
         self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
         self.im_copy = self.image.copy()
         self.height, self.width = self.image.shape[:2]
-        self.debug = 0
 
 
-    def __draw_curve(self, points):
-        """ Draws a curve alone the given points by creating an interpolated path. """
+    def __draw_curve_up(self, points):
+        """
+        Draws a curve alone the given points by creating an interpolated path.
+        And Traverse x poions of upper lip.
+        """
         x_pts = []
         y_pts = []
-        curvex = []
-        curvey = []
-        self.debug += 1
+        for point in points:
+            x_pts.append(point[0])
+            y_pts.append(point[1])
+        curve = scipy.interpolate.interp1d(x_pts, y_pts, 'quadratic')
+        x_traver = np.arange(x_pts[0], x_pts[-1]+1, 1)
+        return curve, x_traver
+
+
+    def __draw_curve_low(self, points):
+        """
+        Draws a curve alone the given points by creating an interpolated path.
+        And Traverse x poions of lower lip.
+        """
+        x_pts = []
+        y_pts = []
         for point in points:
             x_pts.append(point[0])
             y_pts.append(point[1])
         curve = scipy.interpolate.interp1d(x_pts, y_pts, 'cubic')
-        if self.debug == 1 or self.debug == 2:
-            for i in np.arange(x_pts[0], x_pts[len(x_pts) - 1] + 1, 1):
-                curvex.append(i)
-                curvey.append(int(curve(i)))
-        else:
-            for i in np.arange(x_pts[len(x_pts) - 1] + 1, x_pts[0], 1):
-                curvex.append(i)
-                curvey.append(int(curve(i)))
-        return curvex, curvey
-
-
-    def __fill_lip_lines(self, outer, inner):
-        """ Fills the outlines of a lip with colour. """
-        outer_curve = zip(outer[0], outer[1])
-        inner_curve = zip(inner[0], inner[1])
-        count = len(inner[0]) - 1
-        last_inner = [inner[0][count], inner[1][count]]
-        for o_point, i_point in itertools.zip_longest(
-                outer_curve, inner_curve, fillvalue=last_inner
-            ):
-            line = scipy.interpolate.interp1d(
-                [o_point[0], i_point[0]], [o_point[1], i_point[1]], 'linear')
-            xpoints = list(np.arange(o_point[0], i_point[0], 1))
-            self.lip_x.extend(xpoints)
-            self.lip_y.extend([int(point) for point in line(xpoints)])
-        return
+        x_traver = np.arange(x_pts[0], x_pts[-1]+1, 1)
+        return curve, x_traver
 
 
     def __smoothen_color(self, outer, inner):
@@ -180,9 +169,9 @@ class ApplyMakeup(DetectLandmarks):
     def __add_color(self, intensity):
         """ Adds base colour to all points on lips, at mentioned intensity. """
         val = color.rgb2lab(
-            (self.image[self.lip_y, self.lip_x] / 255.)
-            .reshape(len(self.lip_y), 1, 3)
-        ).reshape(len(self.lip_y), 3)
+            (self.image[self.lip_x, self.lip_y] / 255.)
+            .reshape(len(self.lip_x), 1, 3)
+        ).reshape(len(self.lip_x), 3)
         l_val, a_val, b_val = np.mean(val[:, 0]), np.mean(val[:, 1]), np.mean(val[:, 2])
         l1_val, a1_val, b1_val = color.rgb2lab(
             np.array(
@@ -195,43 +184,68 @@ class ApplyMakeup(DetectLandmarks):
         val[:, 0] = np.clip(val[:, 0] + l_final, 0, 100)
         val[:, 1] = np.clip(val[:, 1] + a_final, -127, 128)
         val[:, 2] = np.clip(val[:, 2] + b_final, -127, 128)
-        self.image[self.lip_y, self.lip_x] = color.lab2rgb(val.reshape(
-            len(self.lip_y), 1, 3)).reshape(len(self.lip_y), 3) * 255
+        self.image[self.lip_x, self.lip_y] = color.lab2rgb(val.reshape(
+            len(self.lip_x), 1, 3)).reshape(len(self.lip_x), 3) * 255
 
 
     def __get_points_lips(self, lips_points):
         """ Get the points for the lips. """
         uol = []
+        uor = []
         uil = []
-        lol = []
-        lil = []
-        for i in range(0, 14, 2):
+        uir = []
+        lo = []
+        li = []
+        for i in range(0, 8, 2):
             uol.append([int(lips_points[i]), int(lips_points[i + 1])])
+        for i in range(6, 14, 2):
+            uor.append([int(lips_points[i]), int(lips_points[i + 1])])
         for i in range(12, 24, 2):
-            lol.append([int(lips_points[i]), int(lips_points[i + 1])])
-        lol.append([int(lips_points[0]), int(lips_points[1])])
-        for i in range(24, 34, 2):
+            lo.append([int(lips_points[i]), int(lips_points[i + 1])])
+        lo.append([int(lips_points[0]), int(lips_points[1])])
+        for i in range(24, 30, 2):
             uil.append([int(lips_points[i]), int(lips_points[i + 1])])
+        for i in range(28, 34, 2):
+            uir.append([int(lips_points[i]), int(lips_points[i + 1])])
         for i in range(32, 40, 2):
-            lil.append([int(lips_points[i]), int(lips_points[i + 1])])
-        lil.append([int(lips_points[24]), int(lips_points[25])])
-        return uol, uil, lol, lil
+            li.append([int(lips_points[i]), int(lips_points[i + 1])])
+        li.append([int(lips_points[24]), int(lips_points[25])])
+        return uol, uor, uil, uir, lo, li
 
 
-    def __get_curves_lips(self, uol, uil, lol, lil):
-        """ Get the outlines of the lips. """
-        uol_curve = self.__draw_curve(uol)
-        uil_curve = self.__draw_curve(uil)
-        lol_curve = self.__draw_curve(lol)
-        lil_curve = self.__draw_curve(lil)
-        return uol_curve, uil_curve, lol_curve, lil_curve
+    def __get_curves_lips(self, uol, uor, uil, uir, lo, li):
+        """ Get the outlines and x points of the lips. """
+        uol_curve = self.__draw_curve_up(uol)
+        uor_curve = self.__draw_curve_up(uor)
+        uil_curve = self.__draw_curve_up(uil)
+        uir_curve = self.__draw_curve_up(uir)
+        lo_curve = self.__draw_curve_low(lo)
+        li_curve = self.__draw_curve_low(li)
+        return uol_curve, uor_curve, uil_curve, uir_curve, lo_curve, li_curve
 
 
-    def __fill_color(self, uol_c, uil_c, lol_c, lil_c):
-        """ Fill colour in lips. """
-        self.__fill_lip_lines(uol_c, uil_c)
-        self.__fill_lip_lines(lol_c, lil_c)
-        self.__add_color(1)
+    def __traverse_store(self, a, b, i):
+        """ Traverse along y axis with given x poionts in two curves and store them in lip_x and lip_y. """
+        a, b = np.around(a), np.around(b)
+        self.lip_x.extend(np.arange(a, b, 1, dtype=np.int32).tolist())
+        self.lip_y.extend((np.ones(int(b - a), dtype=np.int32) * i).tolist())
+
+
+    def __get_whole_lips(self, uol_curve, uor_curve, uil_curve, uir_curve, lo_curve, li_curve):
+        """ Get all points inside lips curves. """
+        for i in range(int(uol_curve[1][0]), int(uil_curve[1][0] + 1)):
+            self.__traverse_store(uol_curve[0](i), lo_curve[0](i) + 1, i)
+
+        for i in range(int(uil_curve[1][0]), int(uol_curve[1][-1] + 1)):
+            self.__traverse_store(uol_curve[0](i), uil_curve[0](i) + 1, i)
+            self.__traverse_store(li_curve[0](i), lo_curve[0](i) + 1, i)
+
+        for i in range(int(uir_curve[1][-1]), int(uor_curve[1][-1] + 1)):
+            self.__traverse_store(uor_curve[0](i), lo_curve[0](i) + 1, i)
+
+        for i in range(int(uir_curve[1][0]), int(uir_curve[1][-1] + 1)):
+            self.__traverse_store(uor_curve[0](i), uir_curve[0](i) + 1, i)
+            self.__traverse_store(li_curve[0](i), lo_curve[0](i) + 1, i)
 
 
     def __create_eye_liner(self, eyes_points):
@@ -265,9 +279,10 @@ class ApplyMakeup(DetectLandmarks):
         lips = self.get_lips(self.image)
         lips = list([point.split() for point in lips.split('\n')])
         lips_points = [item for sublist in lips for item in sublist]
-        uol, uil, lol, lil = self.__get_points_lips(lips_points)
-        uol_c, uil_c, lol_c, lil_c = self.__get_curves_lips(uol, uil, lol, lil)
-        self.__fill_color(uol_c, uil_c, lol_c, lil_c)
+        uol, uor, uil, uir, lo, li = self.__get_points_lips(lips_points)
+        uol_curve, uor_curve, uil_curve, uir_curve, lo_curve, li_curve = self.__get_curves_lips(uol, uor, uil, uir, lo, li)
+        self.__get_whole_lips(uol_curve, uor_curve, uil_curve, uir_curve, lo_curve, li_curve)
+        self.__add_color(1)
         self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
         name = 'color_' + str(self.red_l) + '_' + str(self.green_l) + '_' + str(self.blue_l)
         file_name = 'output_' + name + '.jpg'
